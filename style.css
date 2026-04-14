@@ -1,0 +1,38 @@
+body {
+    background-color: #111;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    margin: 0;
+}
+.header h1 {
+    margin: 20px 0;
+    font-size: 40px;
+    letter-spacing: 2px;
+}
+
+
+canvas {
+    background-color: #8ACE00;
+    border: 3px solid white;
+    display: block;
+    margin: 20px auto;
+    box-shadow: 0 0 20px #aaff00;
+}
+
+/* točke in čas */
+#tocke, #cas {
+    font-weight: bold;
+    font-size: 20px;
+}
+
+div {
+    margin: 10px;
+}
+
+.scoreboard {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    font-size: 20px;
+}
