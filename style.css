@@ -1,10 +1,73 @@
 body {
-    background-color: #111;
+    background-color: #0f0f0f;
     color: white;
     font-family: Arial, sans-serif;
     text-align: center;
     margin: 0;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
 }
+
+.bg-marquee {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+    background-color: #0f0f0f;
+}
+
+.bg-row {
+    height: clamp(26px, 3.2vh, 44px);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+}
+
+.bg-track {
+    display: flex;
+    width: max-content;
+    white-space: nowrap;
+    font-family: "Courier New", monospace;
+    font-size: clamp(20px, 2.4vw, 34px);
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: rgba(138, 206, 0, 0.17);
+    animation: marqueeLeft 110s linear infinite;
+}
+
+.bg-row.reverse .bg-track {
+    animation-name: marqueeRight;
+}
+
+.bg-track > span {
+    padding-right: 2rem;
+}
+
+.page-content {
+    position: relative;
+    z-index: 2;
+}
+
+@keyframes marqueeLeft {
+    from {
+        transform: translateX(0%);
+    }
+    to {
+        transform: translateX(-50%);
+    }
+}
+
+@keyframes marqueeRight {
+    from {
+        transform: translateX(-50%);
+    }
+    to {
+        transform: translateX(0%);
+    }
+}
+
 .header h1 {
     margin: 20px 0;
     font-size: 40px;
@@ -26,8 +89,12 @@ canvas {
     font-size: 20px;
 }
 
-div {
-    margin: 10px;
+.page-content > div {
+    margin: 0;
+}
+
+.page-content > div + div {
+    margin-top: 10px;
 }
 
 .scoreboard {
