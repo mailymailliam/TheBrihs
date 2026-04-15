@@ -1,210 +1,425 @@
-var ctx;
-var WIDTH;
-var HEIGHT;
+var ctx, WIDTH, HEIGHT;
+var x = 150, y = 150, dx = 2, dy = 4, r = 10;
+var gameStarted = false, gameOver = false;
+var paddlex, paddleh = 10, paddlew = 75;
+var rightDown = false, leftDown = false;
+var bricks, brickSkins, brickPhases;
+var NROWS = 5, NCOLS = 5, BRICKWIDTH, BRICKHEIGHT = 64, PADDING = 3;
+var hitEffects = [], frameTick = 0;
+var tocke = 0, sekunde = 0;
+var bratAudio = null, bratVolume = 0.2, currentTrackUrl = "", bgResizeBound = false;
+var allowedTracks = ["360", "Club classics", "Sympathy is a knife", "Talk talk", "Von dutch", "Everything is romantic", "Rewind", "Apple", "B2b", "365", "360 featuring robyn & yung lean", "Von dutch a.g cook remix faturing addison", "365 featuring shygirl", "Guess featuring Billie Eilish"];
 
-// žoga
-var x = 150;
-var y = 150;
-var dx = 2;
-var dy = 4;
-var r = 10;
+var trackPreviewCache = {}, trackLookupInFlight = {};
 
-// paddle
-var paddlex;
-var paddleh = 10;
-var paddlew = 75;
-
-// kontrole
-var rightDown = false;
-var leftDown = false;
-
-// bricks
-var bricks;
-var NROWS = 5;
-var NCOLS = 5;
-var BRICKWIDTH;
-var BRICKHEIGHT = 15;
-var PADDING = 1;
-
-// točke in čas
-var tocke = 0;
-var sekunde = 0;
-var intervalId;
-
-// ozadna glasba
-var bratTracks = [
-  "360",
-  "Club classics",
-  "Sympathy is a knife",
-  "Talk talk",
-  "Von dutch",
-  "Everything is romantic",
-  "Rewind",
-  "Apple",
-  "B2b",
-  "365",
-  "360 featuring robyn & yung lean",
-  "365 featuring shygirl",
-  "Guess featuring Billie Eilish",
-  "Von dutch a.g. cook remix featuring addison"
-
-];
-var bratAudio = null;
-var bratJeZagnan = false;
-var bratVolume = 0.2;
-
-function predvajajAudioOdZacetka(audio) {
-  if (!audio) return;
-
-  try {
-    audio.currentTime = 0;
-  } catch (e) {}
-
-  audio.play().catch(function() {
-    // Browser je blokiral autoplay; počakamo na interakcijo uporabnika.
-  });
+function normalizeTrackName(value) {
+  return (value || "")
+    .toLowerCase()
+    .replace(/faturing/g, "featuring")
+    .replace(/feat\.?/g, "featuring")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
-function predvajajRandomBratPesem() {
-  var randomIndex = Math.floor(Math.random() * bratTracks.length);
-  var randomTrack = bratTracks[randomIndex];
-
-  $.ajax({
-    url: "https://itunes.apple.com/search",
-    dataType: "jsonp",
-    data: {
-      term: "charli xcx " + randomTrack,
-      entity: "song",
-      limit: 20
-    },
-    success: function(response) {
-      var results = response && response.results ? response.results : [];
-      var kandidat = results.find(function(item) {
-        var artist = (item.artistName || "").toLowerCase();
-        var album = (item.collectionName || "").toLowerCase();
-        var track = (item.trackName || "").toLowerCase();
-
-        return artist.indexOf("charli xcx") !== -1 &&
-          album.indexOf("brat") !== -1 &&
-          track.indexOf(randomTrack.toLowerCase()) !== -1 &&
-          !!item.previewUrl;
-      });
-
-      if (!kandidat) return;
-
-      if (bratAudio) {
-        try {
-          bratAudio.pause();
-        } catch (e) {}
+function resolveAllowedTrack(trackName) {
+  if (!trackName) return "";
+  var normalizedTrack = normalizeTrackName(trackName);
+  if (!normalizedTrack) return "";
+  var exact = "";
+  var contains = "";
+  allowedTracks.forEach(function(name) {
+    var normalizedAllowed = normalizeTrackName(name);
+    if (!normalizedAllowed) return;
+    if (normalizedTrack === normalizedAllowed) {
+      exact = name;
+      return;
+    }
+    if (
+      normalizedTrack.indexOf(normalizedAllowed) !== -1 ||
+      normalizedAllowed.indexOf(normalizedTrack) !== -1
+    ) {
+      if (!contains || normalizedAllowed.length > normalizeTrackName(contains).length) {
+        contains = name;
       }
-
-      bratAudio = new Audio(kandidat.previewUrl + "?v=" + Date.now());
-      bratAudio.loop = true;
-      bratAudio.volume = bratVolume;
-      bratAudio.preload = "auto";
-
-      bratAudio.addEventListener("canplay", function() {
-        predvajajAudioOdZacetka(bratAudio);
-      }, { once: true });
-
-      bratAudio.load();
     }
   });
+  return exact || contains;
 }
 
-function poskusiPredvajatiPoInterakciji() {
-  if (bratAudio) {
-    if (!bratAudio.paused && !bratAudio.ended) return;
+function localFallbackUrl(trackName) {
+  var key = normalizeTrackName(trackName);
+  var localPath = localFallbackByTrack[key];
+  return localPath ? encodeURI(localPath) : "";
+}
 
-    bratAudio.play().catch(function() {
-      // Če autoplay še vedno blokira, ne resetiramo komada.
-    });
+function isBratItem(item) {
+  if (!item) return false;
+  var artist = (item.artistName || "").toLowerCase();
+  var collection = (item.collectionName || "").toLowerCase();
+  return artist.indexOf("charli xcx") !== -1 && collection.indexOf("brat") !== -1;
+}
+
+function stopCurrentAudio() {
+  if (!bratAudio) return;
+  try { bratAudio.pause(); } catch (e) {}
+}
+
+function playAudioFromStart(audio) {
+  if (!audio) return;
+  try { audio.currentTime = 0; } catch (e) {}
+  audio.play().catch(function() {});
+}
+
+function playTrackUrl(trackUrl) {
+  if (!trackUrl) return;
+  var target = (trackUrl || "").trim();
+  if (!target) return;
+  if (bratAudio && (currentTrackUrl || "").trim() === target) {
+    if (bratAudio.paused || bratAudio.ended) {
+      bratAudio.play().catch(function() {});
+    }
     return;
   }
-
-  bratJeZagnan = false;
-  zagonBratGlasbe();
+  stopCurrentAudio();
+  bratAudio = new Audio(target);
+  bratAudio.loop = true;
+  bratAudio.volume = bratVolume;
+  bratAudio.preload = "auto";
+  currentTrackUrl = target;
+  bratAudio.addEventListener("canplay", function() {
+    playAudioFromStart(bratAudio);
+  }, { once: true });
+  bratAudio.load();
 }
 
-function zagonBratGlasbe() {
-  if (bratJeZagnan) return;
-  bratJeZagnan = true;
-  predvajajRandomBratPesem();
+function findPreviewForTrack(allowedTrack, done) {
+  var key = normalizeTrackName(allowedTrack);
+  if (trackPreviewCache[key]) {
+    done(trackPreviewCache[key]);
+    return;
+  }
+  if (trackLookupInFlight[key]) {
+    done("");
+    return;
+  }
+  trackLookupInFlight[key] = true;
+  var terms = ["charli xcx " + allowedTrack + " brat", "charli xcx " + allowedTrack];
+
+  function finish(url) {
+    trackLookupInFlight[key] = false;
+    if (url) trackPreviewCache[key] = url;
+    done(url || "");
+  }
+
+  function searchByTerm(index) {
+    if (index >= terms.length) {
+      finish(localFallbackUrl(allowedTrack));
+      return;
+    }
+    $.ajax({
+      url: "https://itunes.apple.com/search",
+      dataType: "jsonp",
+      data: {
+        term: terms[index],
+        entity: "song",
+        limit: 60
+      },
+      success: function(data) {
+        var found = "";
+        if (data && data.results && data.results.length) {
+          data.results.forEach(function(item) {
+            if (found) return;
+            if (!item || !item.previewUrl) return;
+            if (!isBratItem(item)) return;
+            if (resolveAllowedTrack(item.trackName) !== allowedTrack) return;
+            found = item.previewUrl;
+          });
+        }
+        if (found) {
+          finish(found);
+          return;
+        }
+        searchByTerm(index + 1);
+      },
+      error: function() {
+        searchByTerm(index + 1);
+      }
+    });
+  }
+  searchByTerm(0);
 }
 
-function zagonBratGlasbeObInterakciji() {
-  poskusiPredvajatiPoInterakciji();
+function prefetchTrackPreviews() {
+  allowedTracks.forEach(function(trackName) {
+    findPreviewForTrack(trackName, function() {});
+  });
 }
 
-// ================= INIT =================
-function init() {
-  var canvas = document.getElementById("canvas");
-  ctx = canvas.getContext("2d");
-
-  WIDTH = canvas.width;
-  HEIGHT = canvas.height;
-
-  paddlex = WIDTH / 2;
-
-  initbricks();
-  // Poskus autoplay ob odprtju.
-  zagonBratGlasbe();
-  // Če autoplay blokira, naj prvi klik/tipka zanesljivo ponovno sproži predvajanje.
-  document.addEventListener("click", zagonBratGlasbeObInterakciji, { once: true });
-  document.addEventListener("keydown", zagonBratGlasbeObInterakciji, { once: true });
-  document.addEventListener("touchstart", zagonBratGlasbeObInterakciji, { once: true });
-
-  intervalId = setInterval(draw, 10);
-  setInterval(timer, 1000);
+function playTrackByName(trackName) {
+  var allowedTrack = resolveAllowedTrack(trackName);
+  if (!allowedTrack) return;
+  var key = normalizeTrackName(allowedTrack);
+  if (trackPreviewCache[key]) {
+    playTrackUrl(trackPreviewCache[key]);
+    return;
+  }
+  var fallback = localFallbackUrl(allowedTrack);
+  if (fallback) {
+    trackPreviewCache[key] = fallback;
+    playTrackUrl(fallback);
+    return;
+  }
+  findPreviewForTrack(allowedTrack, function(url) {
+    if (url) playTrackUrl(url);
+  });
 }
 
-// ================= TIMER =================
+function tryResumeAudio() {
+  if (!bratAudio) return;
+  if (!bratAudio.paused && !bratAudio.ended) return;
+  bratAudio.play().catch(function() {});
+}
+
+function buildMovingBackground() {
+  var bg = document.getElementById("bgMarquee");
+  if (!bg) return;
+  var rowHeight = 36;
+  var rowCount = Math.ceil(window.innerHeight / rowHeight) + 4;
+  var phrase = "BRAT X BRIH XCX CLUB 360 B2b";
+  var segment = (phrase + "  ").repeat(16);
+  bg.innerHTML = "";
+  for (var i = 0; i < rowCount; i++) {
+    var row = document.createElement("div");
+    row.className = "bg-row" + (i % 2 === 1 ? " reverse" : "");
+    var track = document.createElement("div");
+    track.className = "bg-track";
+    var partA = document.createElement("span");
+    var partB = document.createElement("span");
+    partA.textContent = segment;
+    partB.textContent = segment;
+
+    track.appendChild(partA);
+    track.appendChild(partB);
+    row.appendChild(track);
+    bg.appendChild(row);
+  }
+  if (!bgResizeBound) {
+    bgResizeBound = true;
+    window.addEventListener("resize", buildMovingBackground);
+  }
+}
+
+function startGame() {
+  if (gameStarted || gameOver) return;
+  gameStarted = true;
+  dx = 0;
+  dy = -4;
+}
+
+function resetGame() {
+  initBricks();
+  paddlex = WIDTH / 2 - paddlew / 2;
+  x = paddlex + paddlew / 2;
+  y = HEIGHT - paddleh - r - 2;
+  dx = 0;
+  dy = 0;
+  gameStarted = false;
+  gameOver = false;
+  rightDown = false;
+  leftDown = false;
+  hitEffects = [];
+  frameTick = 0;
+  tocke = 0;
+  sekunde = 0;
+  $("#tocke").html(tocke);
+  $("#cas").html("00:00");
+}
+
 function timer() {
   sekunde++;
-
   var min = Math.floor(sekunde / 60);
   var sec = sekunde % 60;
-
   if (sec < 10) sec = "0" + sec;
   if (min < 10) min = "0" + min;
-
   $("#cas").html(min + ":" + sec);
 }
 
-// ================= BRICKS =================
-function initbricks() {
+function initBricks() {
   bricks = [];
-  BRICKWIDTH = (WIDTH / NCOLS) - 1;
+  brickSkins = [];
+  brickPhases = [];
+  BRICKWIDTH = (WIDTH - (NCOLS + 1) * PADDING) / NCOLS;
 
+  var totalBricks = NROWS * NCOLS;
+  var trackIndexes = [];
+  for (var k = 0; k < totalBricks; k++) {
+    trackIndexes.push(k % allowedTracks.length);
+  }
+  for (var s = trackIndexes.length - 1; s > 0; s--) {
+    var rand = Math.floor(Math.random() * (s + 1));
+    var temp = trackIndexes[s];
+    trackIndexes[s] = trackIndexes[rand];
+    trackIndexes[rand] = temp;
+  }
+
+  var idx = 0;
   for (var i = 0; i < NROWS; i++) {
     bricks[i] = [];
+    brickSkins[i] = [];
+    brickPhases[i] = [];
     for (var j = 0; j < NCOLS; j++) {
       bricks[i][j] = 1;
+      brickSkins[i][j] = trackIndexes[idx++];
+      brickPhases[i][j] = Math.random() * Math.PI * 2;
     }
   }
 }
 
-// ================= DRAW HELPERS =================
-function circle(x,y,r) {
+function wrapTextLines(text, maxCharsPerLine, maxLines) {
+  var words = (text || "").split(" ");
+  var lines = [];
+  var current = "";
+  for (var i = 0; i < words.length; i++) {
+    var next = current ? current + " " + words[i] : words[i];
+    if (next.length <= maxCharsPerLine) {
+      current = next;
+    } else {
+      if (current) lines.push(current);
+      current = words[i];
+      if (lines.length === maxLines - 1) break;
+    }
+  }
+
+  if (lines.length < maxLines && current) lines.push(current);
+  if (lines.length === 0) lines.push(text || "");
+  return lines.slice(0, maxLines);
+}
+
+function drawTarget(trackName, brickX, brickY, brickW, brickH, pulse) {
+  ctx.fillStyle = "#8ACE00";
+  ctx.fillRect(brickX, brickY, brickW, brickH);
+
+  var scale = 1 + pulse * 0.025;
+  var innerW = (brickW - 2) * scale;
+  var innerH = (brickH - 2) * scale;
+  var drawX = brickX + (brickW - innerW) / 2;
+  var drawY = brickY + (brickH - innerH) / 2;
+
+  var maxChars = Math.max(8, Math.floor(brickW / 8));
+  var lines = wrapTextLines(trackName, maxChars, 3);
+  ctx.save();
+  ctx.shadowColor = "rgba(202, 255, 137, 0.8)";
+  ctx.shadowBlur = 8 + pulse * 5;
+  ctx.fillStyle = "rgba(232, 245, 233, 0.88)";
+  ctx.fillRect(drawX, drawY, innerW, innerH);
+  ctx.strokeStyle = "#9bc917";
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(drawX, drawY, innerW, innerH);
+  ctx.fillStyle = "#111111";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 12px Arial";
+  var lineStep = 14;
+  var startY = drawY + innerH / 2 - ((lines.length - 1) * lineStep) / 2;
+  for (var l = 0; l < lines.length; l++) {
+    ctx.fillText(lines[l], drawX + innerW / 2, startY + l * lineStep);
+  }
+
+  ctx.restore();
+}
+
+function addHitEffect(brickX, brickY, brickW, brickH) {
+  hitEffects.push({ x: brickX + brickW / 2, y: brickY + brickH / 2, r: 8, alpha: 0.85, life: 16 });
+
+  for (var i = 0; i < 10; i++) {
+    var a = (Math.PI * 2 * i) / 10;
+    var speed = 1.5 + Math.random() * 1.5;
+    hitEffects.push({
+      x: brickX + brickW / 2,
+      y: brickY + brickH / 2,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      size: 2 + Math.random() * 2,
+      alpha: 1,
+      life: 18,
+      particle: true
+    });
+  }
+}
+
+function drawHitEffects() {
+  for (var i = hitEffects.length - 1; i >= 0; i--) {
+    var e = hitEffects[i];
+    e.life -= 1;
+
+    if (e.life <= 0) {
+      hitEffects.splice(i, 1);
+      continue;
+    }
+
+    e.alpha = e.life / 18;
+
+    if (e.particle) {
+      e.x += e.vx;
+      e.y += e.vy;
+      e.vy += 0.02;
+      ctx.save();
+      ctx.globalAlpha = e.alpha;
+      ctx.fillStyle = "#eaffc6";
+      ctx.fillRect(e.x, e.y, e.size, e.size);
+      ctx.restore();
+    } else {
+      e.r += 1.8;
+      ctx.save();
+      ctx.globalAlpha = e.alpha;
+      ctx.strokeStyle = "#eaffc6";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+function drawApple(cx, cy, radius) {
+  var bodyR = Math.max(7, radius - 1);
+  ctx.save();
+  ctx.fillStyle = "#f4f7ff";
   ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.arc(cx - bodyR * 0.28, cy + bodyR * 0.03, bodyR * 0.62, 0, Math.PI * 2);
+  ctx.arc(cx + bodyR * 0.28, cy + bodyR * 0.03, bodyR * 0.62, 0, Math.PI * 2);
+  ctx.closePath();
   ctx.fill();
-}
-
-function rect(x,y,w,h) {
+  ctx.fillStyle = "#8ACE00";
   ctx.beginPath();
-  ctx.rect(x,y,w,h);
+  ctx.arc(cx, cy - bodyR * 0.52, bodyR * 0.24, 0, Math.PI * 2);
   ctx.fill();
+
+  ctx.strokeStyle = "#111111";
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx - 1, cy - bodyR * 0.72);
+  ctx.lineTo(cx + bodyR * 0.18, cy - bodyR * 1.03);
+  ctx.stroke();
+  ctx.fillStyle = "#e8f5e9";
+  ctx.beginPath();
+  ctx.ellipse(cx + bodyR * 0.33, cy - bodyR * 0.9, bodyR * 0.2, bodyR * 0.1, -0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
-function clear() {
-  ctx.clearRect(0, 0, WIDTH, HEIGHT);
-}
-
-// ================= CONTROLS =================
 $(document).keydown(function(e) {
   if (e.key === "ArrowRight") rightDown = true;
   if (e.key === "ArrowLeft") leftDown = true;
+
+  if (e.key === " " || e.key === "Spacebar" || e.key === "ArrowUp" || e.key === "Enter") {
+    e.preventDefault();
+    if (gameOver) resetGame();
+    if (!gameStarted) startGame();
+  }
 });
 
 $(document).keyup(function(e) {
@@ -212,75 +427,118 @@ $(document).keyup(function(e) {
   if (e.key === "ArrowLeft") leftDown = false;
 });
 
-// ================= MAIN DRAW =================
 function draw() {
-  clear();
-ctx.save();
-ctx.globalAlpha = 0.1; // prosojnost
-ctx.fillStyle = "black";
-ctx.font = "200px Arial";
-ctx.textAlign = "center";
-ctx.fillText("brih", WIDTH / 2, HEIGHT / 2);
-ctx.restore();
-  // premik paddle
+  ctx.clearRect(0, 0, WIDTH, HEIGHT);
+  frameTick++;
+  if (gameOver) {
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "bold 64px Arial";
+    ctx.fillText("Game Over", WIDTH / 2, HEIGHT / 2 - 24);
+    ctx.font = "24px Arial";
+    ctx.fillText("Space / Enter za novo igro", WIDTH / 2, HEIGHT / 2 + 28);
+    ctx.restore();
+    return;
+  }
+  ctx.save();
+  ctx.fillStyle = "black";
+  ctx.font = "190px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("brih", WIDTH / 2, HEIGHT / 2);
+  ctx.restore();
   if (rightDown && paddlex + paddlew < WIDTH) paddlex += 5;
   if (leftDown && paddlex > 0) paddlex -= 5;
-
-  // žoga
-  circle(x, y, r);
-
-  // paddle
-  rect(paddlex, HEIGHT - paddleh, paddlew, paddleh);
-
-  // bricks
+  if (!gameStarted) {
+    x = paddlex + paddlew / 2;
+    y = HEIGHT - paddleh - r - 2;
+  }
+  drawApple(x, y, r * 1.4);
+  ctx.fillStyle = "black";
+  ctx.fillRect(paddlex, HEIGHT - paddleh, paddlew, paddleh);
   for (var i = 0; i < NROWS; i++) {
     for (var j = 0; j < NCOLS; j++) {
-      if (bricks[i][j] == 1) {
-        rect(
-          j * (BRICKWIDTH + PADDING) + PADDING,
-          i * (BRICKHEIGHT + PADDING) + PADDING,
-          BRICKWIDTH,
-          BRICKHEIGHT
-        );
-      }
+      if (bricks[i][j] !== 1) continue;
+
+      var brickX = j * (BRICKWIDTH + PADDING) + PADDING;
+      var brickY = i * (BRICKHEIGHT + PADDING) + PADDING;
+      var trackIndex = brickSkins[i][j];
+      var trackName = allowedTracks[trackIndex % allowedTracks.length];
+      var pulse = Math.sin(frameTick * 0.07 + brickPhases[i][j]);
+
+      drawTarget(trackName, brickX, brickY, BRICKWIDTH, BRICKHEIGHT, pulse);
     }
   }
-
-  // zadetek opeke
+  drawHitEffects();
+  if (!gameStarted) return;
   var rowheight = BRICKHEIGHT + PADDING;
   var colwidth = BRICKWIDTH + PADDING;
-
   var row = Math.floor(y / rowheight);
   var col = Math.floor(x / colwidth);
-
-  if (y < NROWS * rowheight && bricks[row] && bricks[row][col] == 1) {
+  if (y < NROWS * rowheight && bricks[row] && bricks[row][col] === 1) {
     dy = -dy;
-    bricks[row][col] = 0;
 
+    var hitX = col * (BRICKWIDTH + PADDING) + PADDING;
+    var hitY = row * (BRICKHEIGHT + PADDING) + PADDING;
+    addHitEffect(hitX, hitY, BRICKWIDTH, BRICKHEIGHT);
+    var hitTrackIndex = brickSkins[row][col];
+    var hitTrackName = allowedTracks[hitTrackIndex % allowedTracks.length];
+    bricks[row][col] = 0;
     tocke++;
     $("#tocke").html(tocke);
+    playTrackByName(hitTrackName);
   }
-
-  // stene
   if (x + dx > WIDTH - r || x + dx < r) dx = -dx;
   if (y + dy < r) dy = -dy;
 
-  // paddle collision
   if (y + dy > HEIGHT - r) {
     if (x > paddlex && x < paddlex + paddlew) {
       dy = -dy;
-
-      // kot odbijanja
-      dx = 8 * ((x - (paddlex + paddlew/2)) / paddlew);
+      dx = 8 * ((x - (paddlex + paddlew / 2)) / paddlew);
     } else {
-      clearInterval(intervalId);
-      alert("Game Over");
+      gameOver = true;
+      gameStarted = false;
+      dx = 0;
+      dy = 0;
     }
   }
-
   x += dx;
   y += dy;
 }
 
-// ================= START =================
+function init() {
+  var canvas = document.getElementById("canvas");
+  ctx = canvas.getContext("2d");
+
+  WIDTH = canvas.width;
+  HEIGHT = canvas.height;
+  paddlex = WIDTH / 2 - paddlew / 2;
+  x = paddlex + paddlew / 2;
+  y = HEIGHT - paddleh - r - 2;
+  dx = 0;
+  dy = 0;
+  gameStarted = false;
+  gameOver = false;
+  buildMovingBackground();
+  initBricks();
+  prefetchTrackPreviews();
+  document.addEventListener("click", tryResumeAudio, { once: true });
+  document.addEventListener("keydown", tryResumeAudio, { once: true });
+  document.addEventListener("touchstart", tryResumeAudio, { once: true });
+  canvas.addEventListener("click", function() {
+    if (gameOver) resetGame();
+    startGame();
+  });
+  canvas.addEventListener("touchstart", function() {
+    if (gameOver) resetGame();
+    startGame();
+  });
+  setInterval(draw, 10);
+  setInterval(timer, 1000);
+}
+
 init();
