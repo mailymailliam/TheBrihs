@@ -12,6 +12,16 @@
 </head>
 
 <body>
+	<div id="startOverlay" class="start-overlay" role="dialog" aria-modal="true" aria-labelledby="startTitle">
+		<div class="start-card">
+			<h2 id="startTitle">How To Play</h2>
+			<p>Move with Left / Right arrows.</p>
+			<p>Break all blocks to win.</p>
+			<p>Each block hit plays a music clip.</p>
+			<button id="startGameBtn" type="button">Start Game</button>
+		</div>
+	</div>
+
 	<div id="bgMarquee" class="bg-marquee" aria-hidden="true"></div>
 
 	<div class="page-content">
@@ -21,8 +31,8 @@
 			<canvas id="canvas" width="800" height="800"></canvas>
 		</div>
 
-		<div>Točke: <span id="tocke">0</span></div>
-		<div>Čas: <span id="cas">00:00</span></div>
+		<div>Score: <span id="tocke">0</span></div>
+		<div>Time: <span id="cas">00:00</span></div>
 	</div>
 
 	<script src="form.js"></script>
