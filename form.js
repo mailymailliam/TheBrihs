@@ -261,7 +261,6 @@ function drawTarget(trackName, brickX, brickY, brickW, brickH, pulse) {
   var sleeveX = centerX - radius * 0.45 + moveX;
   var sleeveY = centerY + moveY;
   
-  // Draw spinning vinyl record first so sleeve appears on top.
   ctx.beginPath();
   ctx.arc(vinylCenterX, vinylCenterY, radius, 0, Math.PI * 2);
   ctx.clip();
@@ -290,7 +289,6 @@ function drawTarget(trackName, brickX, brickY, brickW, brickH, pulse) {
   }
   ctx.restore();
 
-  // Draw white sleeve above vinyl.
   ctx.save();
   ctx.translate(sleeveX, sleeveY);
   ctx.rotate(0);
@@ -300,7 +298,6 @@ function drawTarget(trackName, brickX, brickY, brickW, brickH, pulse) {
   ctx.lineWidth = 1.6;
   ctx.strokeRect(-sleeveSize / 2, -sleeveSize / 2, sleeveSize, sleeveSize);
 
-  // Song title on the sleeve.
   var titleMaxChars = Math.max(8, Math.floor(sleeveSize / 7.4));
   var titleLines = wrapTextLines(trackName, titleMaxChars, 3);
   ctx.fillStyle = "#111111";
