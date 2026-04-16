@@ -31,8 +31,6 @@ var localTrackUrls = {
   "girl so confusing featuring lorde": "music/Girl, so confusing featuring lorde.mp3"
 };
 
-var trackPreviewCache = {}, trackLookupInFlight = {};
-
 function normalizeTrackName(value) {
   return (value || "")
     .toLowerCase()
@@ -84,12 +82,6 @@ function stopCurrentAudio() {
   try { bratAudio.pause(); } catch (e) {}
 }
 
-function playAudioFromStart(audio) {
-  if (!audio) return;
-  try { audio.currentTime = 0; } catch (e) {}
-  audio.play().catch(function() {});
-}
-
 function playTrackUrl(trackUrl) {
   if (!trackUrl) return;
   var target = (trackUrl || "").trim();
@@ -114,49 +106,13 @@ function playTrackUrl(trackUrl) {
   bratAudio.load();
 }
 
-function findPreviewForTrack(allowedTrack, done) {
-  var key = normalizeTrackName(allowedTrack);
-  if (trackPreviewCache[key]) {
-    done(trackPreviewCache[key]);
-    return;
-  }
-  if (trackLookupInFlight[key]) {
-    done("");
-    return;
-  }
-  var localUrl = localTrackUrls[key];
-  if (!localUrl) {
-    done("");
-    return;
-  }
-
-  trackLookupInFlight[key] = true;
-
-  function finish(url) {
-    trackLookupInFlight[key] = false;
-    if (url) trackPreviewCache[key] = url;
-    done(url || "");
-  }
-  finish(encodeURI(localUrl));
-}
-
-function prefetchTrackPreviews() {
-  allowedTracks.forEach(function(trackName) {
-    findPreviewForTrack(trackName, function() {});
-  });
-}
-
 function playTrackByName(trackName) {
   var allowedTrack = resolveAllowedTrack(trackName);
   if (!allowedTrack) return;
   var key = normalizeTrackName(allowedTrack);
-  if (trackPreviewCache[key]) {
-    playTrackUrl(trackPreviewCache[key]);
-    return;
-  }
-  findPreviewForTrack(allowedTrack, function(url) {
-    if (url) playTrackUrl(url);
-  });
+  var localUrl = localTrackUrls[key];
+  if (!localUrl) return;
+  playTrackUrl(encodeURI(localUrl));
 }
 
 function tryResumeAudio() {
@@ -509,7 +465,6 @@ function init() {
   gameOver = false;
   buildMovingBackground();
   initBricks();
-  prefetchTrackPreviews();
   document.addEventListener("click", tryResumeAudio, { once: true });
   document.addEventListener("keydown", tryResumeAudio, { once: true });
   document.addEventListener("touchstart", tryResumeAudio, { once: true });
