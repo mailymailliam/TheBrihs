@@ -8,7 +8,28 @@ var NROWS = 5, NCOLS = 5, BRICKWIDTH, BRICKHEIGHT = 64, PADDING = 3;
 var hitEffects = [], frameTick = 0;
 var tocke = 0, sekunde = 0;
 var bratAudio = null, bratVolume = 0.2, currentTrackUrl = "", bgResizeBound = false;
-var allowedTracks = ["360", "Club classics", "Sympathy is a knife", "Talk talk", "Von dutch", "Everything is romantic", "Rewind", "Apple", "B2b", "365", "360 featuring robyn & yung lean", "Von dutch a.g cook remix faturing addison", "365 featuring shygirl", "Guess featuring Billie Eilish"];
+var clipStopTimer = null;
+var clipDurationSec = 18;
+var clipStartRatio = 0.48;
+var allowedTracks = ["360", "Club classics", "Sympathy is a knife", "Talk talk", "Von dutch", "Everything is romantic", "Rewind", "Apple", "B2b", "365", "360 featuring robyn & yung lean", "Von dutch a.g cook remix faturing addison", "365 featuring shygirl", "Guess featuring billie eilish", "Girl, so confusing featuring lorde"];
+
+var localTrackUrls = {
+  "360": "music/360_spotdown.org.mp3",
+  "club classics": "music/Club classics_spotdown.org.mp3",
+  "sympathy is a knife": "music/Sympathy is a knife_spotdown.org.mp3",
+  "talk talk": "music/Talk talk_spotdown.org.mp3",
+  "von dutch": "music/Von dutch_spotdown.org.mp3",
+  "everything is romantic": "music/Everything is romantic_spotdown.org.mp3",
+  "rewind": "music/Rewind_spotdown.org.mp3",
+  "apple": "music/Apple_spotdown.org.mp3",
+  "b2b": "music/B2b_spotdown.org.mp3",
+  "365": "music/365_spotdown.org.mp3",
+  "360 featuring robyn and yung lean": "music/360 featuring robyn & yung lean_spotdown.org.mp3",
+  "von dutch a g cook remix featuring addison": "music/Von dutch a. g. cook remix featuring addison rae_spotdown.org.mp3",
+  "365 featuring shygirl": "music/365 featuring shygirl_spotdown.org.mp3",
+  "guess featuring billie eilish": "music/Guess featuring billie eilish_spotdown.org.mp3",
+  "girl so confusing featuring lorde": "music/Girl, so confusing featuring lorde.mp3"
+};
 
 var trackPreviewCache = {}, trackLookupInFlight = {};
 
@@ -16,7 +37,7 @@ function normalizeTrackName(value) {
   return (value || "")
     .toLowerCase()
     .replace(/faturing/g, "featuring")
-    .replace(/feat\.?/g, "featuring")
+    .replace(/\bfeat\.?\b/g, "featuring")
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
@@ -56,6 +77,10 @@ function isBratItem(item) {
 
 function stopCurrentAudio() {
   if (!bratAudio) return;
+  if (clipStopTimer) {
+    clearTimeout(clipStopTimer);
+    clipStopTimer = null;
+  }
   try { bratAudio.pause(); } catch (e) {}
 }
 
@@ -69,20 +94,22 @@ function playTrackUrl(trackUrl) {
   if (!trackUrl) return;
   var target = (trackUrl || "").trim();
   if (!target) return;
-  if (bratAudio && (currentTrackUrl || "").trim() === target) {
-    if (bratAudio.paused || bratAudio.ended) {
-      bratAudio.play().catch(function() {});
-    }
-    return;
-  }
+
   stopCurrentAudio();
   bratAudio = new Audio(target);
-  bratAudio.loop = true;
+  bratAudio.loop = false;
   bratAudio.volume = bratVolume;
   bratAudio.preload = "auto";
   currentTrackUrl = target;
-  bratAudio.addEventListener("canplay", function() {
-    playAudioFromStart(bratAudio);
+  bratAudio.addEventListener("loadedmetadata", function() {
+    var duration = isFinite(bratAudio.duration) ? bratAudio.duration : 0;
+    var startAt = duration > 0 ? Math.max(0, Math.min(duration - 1, duration * clipStartRatio)) : 0;
+    try { bratAudio.currentTime = startAt; } catch (e) {}
+    bratAudio.play().catch(function() {});
+    if (clipStopTimer) clearTimeout(clipStopTimer);
+    clipStopTimer = setTimeout(function() {
+      try { bratAudio.pause(); } catch (e) {}
+    }, clipDurationSec * 1000);
   }, { once: true });
   bratAudio.load();
 }
@@ -97,51 +124,20 @@ function findPreviewForTrack(allowedTrack, done) {
     done("");
     return;
   }
+  var localUrl = localTrackUrls[key];
+  if (!localUrl) {
+    done("");
+    return;
+  }
+
   trackLookupInFlight[key] = true;
-  var terms = ["charli xcx " + allowedTrack + " brat", "charli xcx " + allowedTrack];
 
   function finish(url) {
     trackLookupInFlight[key] = false;
     if (url) trackPreviewCache[key] = url;
     done(url || "");
   }
-
-  function searchByTerm(index) {
-    if (index >= terms.length) {
-      finish("");
-      return;
-    }
-    $.ajax({
-      url: "https://itunes.apple.com/search",
-      dataType: "jsonp",
-      data: {
-        term: terms[index],
-        entity: "song",
-        limit: 60
-      },
-      success: function(data) {
-        var found = "";
-        if (data && data.results && data.results.length) {
-          data.results.forEach(function(item) {
-            if (found) return;
-            if (!item || !item.previewUrl) return;
-            if (!isBratItem(item)) return;
-            if (resolveAllowedTrack(item.trackName) !== allowedTrack) return;
-            found = item.previewUrl;
-          });
-        }
-        if (found) {
-          finish(found);
-          return;
-        }
-        searchByTerm(index + 1);
-      },
-      error: function() {
-        searchByTerm(index + 1);
-      }
-    });
-  }
-  searchByTerm(0);
+  finish(encodeURI(localUrl));
 }
 
 function prefetchTrackPreviews() {
