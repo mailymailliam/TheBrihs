@@ -1,7 +1,7 @@
 var ctx, WIDTH, HEIGHT;
 var x = 150, y = 150, dx = 2, dy = 4, r = 10;
 var gameStarted = false, gameOver = false;
-var paddlex, paddleh = 10, paddlew = 75;
+var paddlex, paddleh = 10, paddlew = 95;
 var rightDown = false, leftDown = false;
 var bricks, brickSkins, brickPhases;
 var NROWS = 5, NCOLS = 5, BRICKWIDTH, BRICKHEIGHT = 64, PADDING = 3;
@@ -286,6 +286,20 @@ function addHitEffect(brickX, brickY, brickW, brickH) {
       particle: true
     });
   }
+
+  for (var n = 0; n < 4; n++) {
+    var spread = (n - 1.5) * 0.55;
+    hitEffects.push({
+      x: brickX + brickW / 2 + spread * 6,
+      y: brickY + brickH / 2 + 3,
+      vx: spread,
+      vy: -1.9 - Math.random() * 0.8,
+      size: 3 + Math.random() * 1.5,
+      alpha: 1,
+      life: 28,
+      note: true
+    });
+  }
 }
 
 function drawHitEffects() {
@@ -300,7 +314,30 @@ function drawHitEffects() {
 
     e.alpha = e.life / 18;
 
-    if (e.particle) {
+    if (e.note) {
+      e.x += e.vx;
+      e.y += e.vy;
+      e.vy += 0.015;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, e.life / 28);
+      ctx.fillStyle = "#0f0f0f";
+      ctx.strokeStyle = "#0f0f0f";
+      ctx.lineWidth = 1.4;
+
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+      ctx.fill();
+
+      var stemH = e.size * 4.2;
+      var stemW = Math.max(1.1, e.size * 0.35);
+      ctx.fillRect(e.x + e.size - stemW * 0.5, e.y - stemH, stemW, stemH);
+
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.size, e.y - stemH);
+      ctx.quadraticCurveTo(e.x + e.size + 4, e.y - stemH + 1.5, e.x + e.size + 6, e.y - stemH + 5);
+      ctx.stroke();
+      ctx.restore();
+    } else if (e.particle) {
       e.x += e.vx;
       e.y += e.vy;
       e.vy += 0.02;
@@ -397,7 +434,7 @@ function draw() {
     x = paddlex + paddlew / 2;
     y = HEIGHT - paddleh - r - 2;
   }
-  drawApple(x, y, r * 1.4);
+  drawApple(x, y, r * 1.9);
   ctx.fillStyle = "black";
   ctx.fillRect(paddlex, HEIGHT - paddleh, paddlew, paddleh);
   for (var i = 0; i < NROWS; i++) {
