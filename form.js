@@ -4,7 +4,7 @@ var gameStarted = false, gameOver = false, gameWon = false;
 var paddlex, paddleh = 10, paddlew = 95;
 var rightDown = false, leftDown = false;
 var bricks, brickSkins, brickPhases;
-var NROWS = 5, NCOLS = 5, BRICKWIDTH, BRICKHEIGHT = 64, PADDING = 3;
+var NROWS = 5, NCOLS = 5, BRICKWIDTH, BRICKHEIGHT = 64, PADDING = 20;
 var hitEffects = [], frameTick = 0;
 var tocke = 0, sekunde = 0;
 var bratAudio = null, bratVolume = 0.2, currentTrackUrl = "", bgResizeBound = false;
@@ -12,6 +12,7 @@ var clipStopTimer = null;
 var clipDurationSec = 18;
 var clipStartRatio = 0.48;
 var instructionsOpen = true;
+var targetVinylImg = null;
 var allowedTracks = ["360", "Club classics", "Sympathy is a knife", "Talk talk", "Von dutch", "Everything is romantic", "Rewind", "Apple", "B2b", "365", "360 featuring robyn & yung lean", "Von dutch a.g cook remix faturing addison", "365 featuring shygirl", "Guess featuring billie eilish", "Girl, so confusing featuring lorde"];
 
 var localTrackUrls = {
@@ -247,35 +248,70 @@ function wrapTextLines(text, maxCharsPerLine, maxLines) {
 }
 
 function drawTarget(trackName, brickX, brickY, brickW, brickH, pulse) {
-  ctx.fillStyle = "#8ACE00";
-  ctx.fillRect(brickX, brickY, brickW, brickH);
-
-  var scale = 1 + pulse * 0.025;
-  var innerW = (brickW - 2) * scale;
-  var innerH = (brickH - 2) * scale;
-  var drawX = brickX + (brickW - innerW) / 2;
-  var drawY = brickY + (brickH - innerH) / 2;
-
-  var maxChars = Math.max(8, Math.floor(brickW / 8));
-  var lines = wrapTextLines(trackName, maxChars, 3);
   ctx.save();
-  ctx.shadowColor = "rgba(202, 255, 137, 0.8)";
-  ctx.shadowBlur = 8 + pulse * 5;
-  ctx.fillStyle = "rgba(232, 245, 233, 0.88)";
-  ctx.fillRect(drawX, drawY, innerW, innerH);
-  ctx.strokeStyle = "#9bc917";
-  ctx.lineWidth = 0.5;
-  ctx.strokeRect(drawX, drawY, innerW, innerH);
+  
+  var centerX = brickX + brickW / 2;
+  var centerY = brickY + brickH / 2;
+  var radius = Math.min(brickW, brickH) / 2 * 1.4;
+  var moveX = Math.sin(frameTick * 0.024 + pulse * 1.6) * 0.85;
+  var moveY = Math.cos(frameTick * 0.026 + pulse * 1.3) * 0.75;
+  var vinylCenterX = centerX + radius * 0.35 + moveX;
+  var vinylCenterY = centerY + moveY;
+  var sleeveSize = radius * 1.8;
+  var sleeveX = centerX - radius * 0.45 + moveX;
+  var sleeveY = centerY + moveY;
+  
+  // Draw spinning vinyl record first so sleeve appears on top.
+  ctx.beginPath();
+  ctx.arc(vinylCenterX, vinylCenterY, radius, 0, Math.PI * 2);
+  ctx.clip();
+  
+  if (targetVinylImg) {
+    ctx.translate(vinylCenterX, vinylCenterY);
+    ctx.rotate((frameTick * 1.2) * Math.PI / 180);
+    ctx.translate(-vinylCenterX, -vinylCenterY);
+    var squareSize = radius * 2;
+    ctx.drawImage(targetVinylImg, vinylCenterX - radius, vinylCenterY - radius, squareSize, squareSize);
+    ctx.fillStyle = "rgba(130, 130, 130, 0.2)";
+    ctx.fillRect(vinylCenterX - radius, vinylCenterY - radius, squareSize, squareSize);
+
+    // Curved white marker to make rotation easier to perceive.
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+    ctx.lineWidth = Math.max(1.5, radius * 0.07);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(vinylCenterX, vinylCenterY, radius * 0.68, -0.4, 0.2);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = "#000000";
+    ctx.beginPath();
+    ctx.arc(vinylCenterX, vinylCenterY, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Draw white sleeve above vinyl.
+  ctx.save();
+  ctx.translate(sleeveX, sleeveY);
+  ctx.rotate(0);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(-sleeveSize / 2, -sleeveSize / 2, sleeveSize, sleeveSize);
+  ctx.strokeStyle = "#d0d0d0";
+  ctx.lineWidth = 1.6;
+  ctx.strokeRect(-sleeveSize / 2, -sleeveSize / 2, sleeveSize, sleeveSize);
+
+  // Song title on the sleeve.
+  var titleMaxChars = Math.max(8, Math.floor(sleeveSize / 7.4));
+  var titleLines = wrapTextLines(trackName, titleMaxChars, 3);
   ctx.fillStyle = "#111111";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "bold 12px Arial";
-  var lineStep = 14;
-  var startY = drawY + innerH / 2 - ((lines.length - 1) * lineStep) / 2;
-  for (var l = 0; l < lines.length; l++) {
-    ctx.fillText(lines[l], drawX + innerW / 2, startY + l * lineStep);
+  var lineStep = 13;
+  var startY = -((titleLines.length - 1) * lineStep) / 2;
+  for (var l = 0; l < titleLines.length; l++) {
+    ctx.fillText(titleLines[l], 0, startY + l * lineStep);
   }
-
   ctx.restore();
 }
 
@@ -546,6 +582,10 @@ function init() {
   gameStarted = false;
   gameOver = false;
   instructionsOpen = true;
+  
+  targetVinylImg = new Image();
+  targetVinylImg.src = "assets/target_vinyl_brat.png";
+  
   buildMovingBackground();
   initBricks();
   var startBtn = document.getElementById("startGameBtn");
