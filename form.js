@@ -1,6 +1,6 @@
 var ctx, WIDTH, HEIGHT;
 var x = 150, y = 150, dx = 2, dy = 4, r = 10;
-var gameStarted = false, gameOver = false;
+var gameStarted = false, gameOver = false, gameWon = false;
 var paddlex, paddleh = 10, paddlew = 95;
 var rightDown = false, leftDown = false;
 var bricks, brickSkins, brickPhases;
@@ -11,6 +11,7 @@ var bratAudio = null, bratVolume = 0.2, currentTrackUrl = "", bgResizeBound = fa
 var clipStopTimer = null;
 var clipDurationSec = 18;
 var clipStartRatio = 0.48;
+var instructionsOpen = true;
 var allowedTracks = ["360", "Club classics", "Sympathy is a knife", "Talk talk", "Von dutch", "Everything is romantic", "Rewind", "Apple", "B2b", "365", "360 featuring robyn & yung lean", "Von dutch a.g cook remix faturing addison", "365 featuring shygirl", "Guess featuring billie eilish", "Girl, so confusing featuring lorde"];
 
 var localTrackUrls = {
@@ -151,10 +152,17 @@ function buildMovingBackground() {
 }
 
 function startGame() {
-  if (gameStarted || gameOver) return;
+  if (instructionsOpen || gameStarted || gameOver || gameWon) return;
   gameStarted = true;
   dx = 0;
   dy = -4;
+}
+
+function closeInstructionsAndStart() {
+  var overlay = document.getElementById("startOverlay");
+  if (overlay) overlay.classList.add("hidden");
+  instructionsOpen = false;
+  startGame();
 }
 
 function resetGame() {
@@ -166,6 +174,7 @@ function resetGame() {
   dy = 0;
   gameStarted = false;
   gameOver = false;
+  gameWon = false;
   rightDown = false;
   leftDown = false;
   hitEffects = [];
@@ -177,6 +186,7 @@ function resetGame() {
 }
 
 function timer() {
+  if (!gameStarted || gameOver || gameWon) return;
   sekunde++;
   var min = Math.floor(sekunde / 60);
   var sec = sekunde % 60;
@@ -389,12 +399,20 @@ function drawApple(cx, cy, radius) {
 }
 
 $(document).keydown(function(e) {
+  if (instructionsOpen) {
+    if (e.key === " " || e.key === "Spacebar" || e.key === "Enter") {
+      e.preventDefault();
+      closeInstructionsAndStart();
+    }
+    return;
+  }
   if (e.key === "ArrowRight") rightDown = true;
   if (e.key === "ArrowLeft") leftDown = true;
 
   if (e.key === " " || e.key === "Spacebar" || e.key === "ArrowUp" || e.key === "Enter") {
     e.preventDefault();
     if (gameOver) resetGame();
+    if (gameWon) resetGame();
     if (!gameStarted) startGame();
   }
 });
@@ -416,8 +434,28 @@ function draw() {
     ctx.textBaseline = "middle";
     ctx.font = "bold 64px Arial";
     ctx.fillText("Game Over", WIDTH / 2, HEIGHT / 2 - 24);
-    ctx.font = "24px Arial";
-    ctx.fillText("Space / Enter za novo igro", WIDTH / 2, HEIGHT / 2 + 28);
+    ctx.font = "bold 24px Arial";
+    ctx.fillText("Score: " + tocke, WIDTH / 2, HEIGHT / 2 + 20);
+    ctx.fillText("Time: " + $("#cas").text(), WIDTH / 2, HEIGHT / 2 + 56);
+    ctx.font = "20px Arial";
+    ctx.fillText("Press Space / Enter to play again", WIDTH / 2, HEIGHT / 2 + 94);
+    ctx.restore();
+    return;
+  }
+  if (gameWon) {
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "bold 64px Arial";
+    ctx.fillText("You Win!", WIDTH / 2, HEIGHT / 2 - 24);
+    ctx.font = "bold 24px Arial";
+    ctx.fillText("Score: " + tocke, WIDTH / 2, HEIGHT / 2 + 20);
+    ctx.fillText("Time: " + $("#cas").text(), WIDTH / 2, HEIGHT / 2 + 56);
+    ctx.font = "20px Arial";
+    ctx.fillText("Press Space / Enter to play again", WIDTH / 2, HEIGHT / 2 + 94);
     ctx.restore();
     return;
   }
@@ -468,6 +506,13 @@ function draw() {
     tocke++;
     $("#tocke").html(tocke);
     playTrackByName(hitTrackName);
+    if (tocke >= NROWS * NCOLS) {
+      gameWon = true;
+      gameStarted = false;
+      dx = 0;
+      dy = 0;
+      return;
+    }
   }
   if (x + dx > WIDTH - r || x + dx < r) dx = -dx;
   if (y + dy < r) dy = -dy;
@@ -500,17 +545,26 @@ function init() {
   dy = 0;
   gameStarted = false;
   gameOver = false;
+  instructionsOpen = true;
   buildMovingBackground();
   initBricks();
+  var startBtn = document.getElementById("startGameBtn");
+  if (startBtn) {
+    startBtn.addEventListener("click", function() {
+      closeInstructionsAndStart();
+    });
+  }
   document.addEventListener("click", tryResumeAudio, { once: true });
   document.addEventListener("keydown", tryResumeAudio, { once: true });
   document.addEventListener("touchstart", tryResumeAudio, { once: true });
   canvas.addEventListener("click", function() {
-    if (gameOver) resetGame();
+    if (instructionsOpen) return;
+    if (gameOver || gameWon) resetGame();
     startGame();
   });
   canvas.addEventListener("touchstart", function() {
-    if (gameOver) resetGame();
+    if (instructionsOpen) return;
+    if (gameOver || gameWon) resetGame();
     startGame();
   });
   setInterval(draw, 10);
