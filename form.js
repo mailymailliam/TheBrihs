@@ -47,12 +47,6 @@ function resolveAllowedTrack(trackName) {
   return exact || contains;
 }
 
-function localFallbackUrl(trackName) {
-  var key = normalizeTrackName(trackName);
-  var localPath = localFallbackByTrack[key];
-  return localPath ? encodeURI(localPath) : "";
-}
-
 function isBratItem(item) {
   if (!item) return false;
   var artist = (item.artistName || "").toLowerCase();
@@ -114,7 +108,7 @@ function findPreviewForTrack(allowedTrack, done) {
 
   function searchByTerm(index) {
     if (index >= terms.length) {
-      finish(localFallbackUrl(allowedTrack));
+      finish("");
       return;
     }
     $.ajax({
@@ -162,12 +156,6 @@ function playTrackByName(trackName) {
   var key = normalizeTrackName(allowedTrack);
   if (trackPreviewCache[key]) {
     playTrackUrl(trackPreviewCache[key]);
-    return;
-  }
-  var fallback = localFallbackUrl(allowedTrack);
-  if (fallback) {
-    trackPreviewCache[key] = fallback;
-    playTrackUrl(fallback);
     return;
   }
   findPreviewForTrack(allowedTrack, function(url) {
